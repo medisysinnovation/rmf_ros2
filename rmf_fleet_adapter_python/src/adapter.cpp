@@ -40,7 +40,7 @@ using TimePoint = std::chrono::time_point<std::chrono::system_clock,
 using Confirmation = agv::FleetUpdateHandle::Confirmation;
 using ConsiderRequest = agv::FleetUpdateHandle::ConsiderRequest;
 using ModifiedConsiderRequest =
-  std::function<Confirmation(const nlohmann::json &description)>;
+  std::function<Confirmation(const nlohmann::json& description)>;
 
 std::unordered_map<std::string, ConsiderRequest> convert(
   const std::unordered_map<std::string, ModifiedConsiderRequest>& consideration)
@@ -50,9 +50,9 @@ std::unordered_map<std::string, ConsiderRequest> convert(
   {
     output[element.first] = [consider = element.second](
       const nlohmann::json& description, Confirmation& confirm)
-    {
-      confirm = consider(description);
-    };
+      {
+        confirm = consider(description);
+      };
   }
 }
 
@@ -93,14 +93,15 @@ PYBIND11_MODULE(rmf_adapter, m) {
   .def("stop", &agv::RobotCommandHandle::stop)
   .def("dock", &agv::RobotCommandHandle::dock);
 
-  m.def("consider_all", []() -> ModifiedConsiderRequest {
-    return [](const nlohmann::json&) -> Confirmation
+  m.def("consider_all", []() -> ModifiedConsiderRequest
     {
-      Confirmation confirm;
-      confirm.accept();
-      return confirm;
-    };
-  });
+      return [](const nlohmann::json&) -> Confirmation
+      {
+        Confirmation confirm;
+        confirm.accept();
+        return confirm;
+      };
+    });
 
   // ROBOTUPDATE HANDLE ======================================================
   py::class_<agv::RobotUpdateHandle,
@@ -290,7 +291,12 @@ PYBIND11_MODULE(rmf_adapter, m) {
     py::arg("text"))
   .def("enable_responsive_wait",
     &agv::RobotUpdateHandle::enable_responsive_wait,
-    py::arg("value"));
+    py::arg("value"))
+  .def("release_lift",
+    [&](agv::RobotUpdateHandle& self)
+    {
+      return self.release_lift();
+    });
 
   // ACTION EXECUTOR   =======================================================
   auto m_robot_update_handle = m.def_submodule("robot_update_handle");
@@ -349,9 +355,9 @@ PYBIND11_MODULE(rmf_adapter, m) {
   // Tier   ==================================================================
   py::enum_<agv::RobotUpdateHandle::Tier>(
     m_robot_update_handle, "Tier")
-    .value("Info", agv::RobotUpdateHandle::Tier::Info)
-    .value("Warning", agv::RobotUpdateHandle::Tier::Warning)
-    .value("Error", agv::RobotUpdateHandle::Tier::Error);
+  .value("Info", agv::RobotUpdateHandle::Tier::Info)
+  .value("Warning", agv::RobotUpdateHandle::Tier::Warning)
+  .value("Error", agv::RobotUpdateHandle::Tier::Error);
 
   // Stubbornness ============================================================
   py::class_<Stubbornness>(
@@ -413,7 +419,7 @@ PYBIND11_MODULE(rmf_adapter, m) {
           if (!node)
           {
             const auto time_since_epoch =
-              std::chrono::system_clock::now().time_since_epoch();
+            std::chrono::system_clock::now().time_since_epoch();
             return rmf_traffic::Time(time_since_epoch);
           }
           return rmf_traffic_ros2::convert(node->now());
@@ -426,14 +432,16 @@ PYBIND11_MODULE(rmf_adapter, m) {
       if (finishing_request_string == "charge")
       {
         finishing_request = planner_id.has_value() && time_now ?
-          std::make_shared<rmf_task::requests::ChargeBatteryFactory>(planner_id.value(), std::move(time_now)) :
-          std::make_shared<rmf_task::requests::ChargeBatteryFactory>();
+        std::make_shared<rmf_task::requests::ChargeBatteryFactory>(planner_id.
+        value(), std::move(time_now)) :
+        std::make_shared<rmf_task::requests::ChargeBatteryFactory>();
       }
       else if (finishing_request_string == "park")
       {
         finishing_request = planner_id.has_value() && time_now ?
-          std::make_shared<rmf_task::requests::ParkRobotFactory>(planner_id.value(), std::move(time_now)) :
-          std::make_shared<rmf_task::requests::ParkRobotFactory>();
+        std::make_shared<rmf_task::requests::ParkRobotFactory>(planner_id.value(),
+        std::move(time_now)) :
+        std::make_shared<rmf_task::requests::ParkRobotFactory>();
       }
 
       return self.set_task_planner_params(
@@ -474,13 +482,15 @@ PYBIND11_MODULE(rmf_adapter, m) {
     "NOTE, deprecated, Use fleet_state_topic_publish_period instead")
   .def("fleet_state_topic_publish_period",
     &agv::FleetUpdateHandle::fleet_state_topic_publish_period,
-    py::arg("value"),
+    py::arg(
+      "value"),
     "Specify a period for how often the fleet state is updated in the\
      database and to the API server, default value is 1s, passing None\
      will disable the updating")
   .def("fleet_state_update_period",
     &agv::FleetUpdateHandle::fleet_state_update_period,
-    py::arg("value"),
+    py::arg(
+      "value"),
     "Specify a period for how often the fleet state message is published for\
      this fleet. Passing in None will disable the fleet state message\
      publishing. The default value is 1s")
@@ -489,77 +499,77 @@ PYBIND11_MODULE(rmf_adapter, m) {
     py::arg("listener"),
     "Provide a callback that will receive fleet state and task updates.")
   .def("consider_delivery_requests",
-     [&](agv::FleetUpdateHandle& self,
-         ModifiedConsiderRequest consider_pickup,
-         ModifiedConsiderRequest consider_dropoff)
+    [&](agv::FleetUpdateHandle& self,
+    ModifiedConsiderRequest consider_pickup,
+    ModifiedConsiderRequest consider_dropoff)
     {
       self.consider_delivery_requests(
-          [consider_pickup = std::move(consider_pickup)](
-            const nlohmann::json &description, Confirmation &confirm)
-          {
-            confirm = consider_pickup(description); // confirm is returned by user
-          },
-          [consider_dropoff = std::move(consider_dropoff)](
-            const nlohmann::json &description, Confirmation &confirm)
-          {
-            confirm = consider_dropoff(description); // confirm is returned by user
-          }
-        );
+        [consider_pickup = std::move(consider_pickup)](
+          const nlohmann::json& description, Confirmation& confirm)
+        {
+          confirm = consider_pickup(description); // confirm is returned by user
+        },
+        [consider_dropoff = std::move(consider_dropoff)](
+          const nlohmann::json& description, Confirmation& confirm)
+        {
+          confirm = consider_dropoff(description); // confirm is returned by user
+        }
+      );
     },
     py::arg("consider_pickup"),
     py::arg("consider_dropoff"))
   .def("consider_cleaning_requests",
-     [&](agv::FleetUpdateHandle& self,
-         ModifiedConsiderRequest consider)
+    [&](agv::FleetUpdateHandle& self,
+    ModifiedConsiderRequest consider)
     {
       self.consider_cleaning_requests(
-          [consider = std::move(consider)](
-            const nlohmann::json &description, Confirmation &confirm)
-          {
-            confirm = consider(description); // confirm is returned by user
-          }
-        );
+        [consider = std::move(consider)](
+          const nlohmann::json& description, Confirmation& confirm)
+        {
+          confirm = consider(description); // confirm is returned by user
+        }
+      );
     },
     py::arg("consider"))
   .def("consider_patrol_requests",
-     [&](agv::FleetUpdateHandle& self,
-         ModifiedConsiderRequest consider)
+    [&](agv::FleetUpdateHandle& self,
+    ModifiedConsiderRequest consider)
     {
       self.consider_patrol_requests(
-          [consider = std::move(consider)](
-            const nlohmann::json &description, Confirmation &confirm)
-          {
-            confirm = consider(description); // confirm is returned by user
-          }
-        );
+        [consider = std::move(consider)](
+          const nlohmann::json& description, Confirmation& confirm)
+        {
+          confirm = consider(description); // confirm is returned by user
+        }
+      );
     },
     py::arg("consider"))
   .def("consider_composed_requests",
-     [&](agv::FleetUpdateHandle& self,
-         ModifiedConsiderRequest consider)
+    [&](agv::FleetUpdateHandle& self,
+    ModifiedConsiderRequest consider)
     {
       self.consider_composed_requests(
-          [consider = std::move(consider)](
-            const nlohmann::json &description, Confirmation &confirm)
-          {
-            confirm = consider(description); // confirm is returned by user
-          }
-        );
+        [consider = std::move(consider)](
+          const nlohmann::json& description, Confirmation& confirm)
+        {
+          confirm = consider(description); // confirm is returned by user
+        }
+      );
     },
     py::arg("consider"))
   .def("add_performable_action",
-     [&](agv::FleetUpdateHandle& self,
-         const std::string& category,
-         ModifiedConsiderRequest consider)
+    [&](agv::FleetUpdateHandle& self,
+    const std::string& category,
+    ModifiedConsiderRequest consider)
     {
       self.add_performable_action(
-          category,
-          [consider = std::move(consider)](
-            const nlohmann::json &description, Confirmation &confirm)
-          {
-            confirm = consider(description); // confirm is returned by user
-          }
-        );
+        category,
+        [consider = std::move(consider)](
+          const nlohmann::json& description, Confirmation& confirm)
+        {
+          confirm = consider(description); // confirm is returned by user
+        }
+      );
     },
     py::arg("category"),
     py::arg("consider"));
@@ -585,7 +595,7 @@ PYBIND11_MODULE(rmf_adapter, m) {
   .def_property("errors",
     py::overload_cast<>(
       &Confirmation::errors, py::const_),\
-      [&](Confirmation& self)
+    [&](Confirmation& self)
     {
       return self.errors();
     });
@@ -739,7 +749,7 @@ PYBIND11_MODULE(rmf_adapter, m) {
   .def_property_readonly("node",
     py::overload_cast<>(
       &agv::test::MockAdapter::node))
-   /// Note: Exposed dispatch_task() for testing
+  /// Note: Exposed dispatch_task() for testing
   .def("dispatch_task",
     &agv::test::MockAdapter::dispatch_task,
     py::arg("task_id"),
@@ -768,18 +778,25 @@ PYBIND11_MODULE(rmf_adapter, m) {
     std::shared_ptr<agv::EasyFullControl::EasyRobotUpdateHandle>
   >(m_easy_full_control, "EasyRobotUpdateHandle")
   .def("update", &agv::EasyFullControl::EasyRobotUpdateHandle::update)
-  .def("max_merge_waypoint_distance", &agv::EasyFullControl::EasyRobotUpdateHandle::max_merge_waypoint_distance)
-  .def("set_max_merge_waypoint_distance", &agv::EasyFullControl::EasyRobotUpdateHandle::set_max_merge_waypoint_distance)
-  .def("max_merge_lane_distance", &agv::EasyFullControl::EasyRobotUpdateHandle::max_merge_lane_distance)
-  .def("set_max_merge_lane_distance", &agv::EasyFullControl::EasyRobotUpdateHandle::set_max_merge_lane_distance)
-  .def("min_lane_length", &agv::EasyFullControl::EasyRobotUpdateHandle::min_lane_length)
-  .def("set_min_lane_length", &agv::EasyFullControl::EasyRobotUpdateHandle::set_min_lane_length)
+  .def("max_merge_waypoint_distance",
+    &agv::EasyFullControl::EasyRobotUpdateHandle::max_merge_waypoint_distance)
+  .def("set_max_merge_waypoint_distance",
+    &agv::EasyFullControl::EasyRobotUpdateHandle::set_max_merge_waypoint_distance)
+  .def("max_merge_lane_distance",
+    &agv::EasyFullControl::EasyRobotUpdateHandle::max_merge_lane_distance)
+  .def("set_max_merge_lane_distance",
+    &agv::EasyFullControl::EasyRobotUpdateHandle::set_max_merge_lane_distance)
+  .def("min_lane_length",
+    &agv::EasyFullControl::EasyRobotUpdateHandle::min_lane_length)
+  .def("set_min_lane_length",
+    &agv::EasyFullControl::EasyRobotUpdateHandle::set_min_lane_length)
   .def("more", [](agv::EasyFullControl::EasyRobotUpdateHandle& self)
     {
       return self.more();
     });
 
-  py::class_<agv::EasyFullControl::RobotState>(m_easy_full_control, "RobotState")
+  py::class_<agv::EasyFullControl::RobotState>(m_easy_full_control,
+    "RobotState")
   .def(py::init<
       const std::string&,
       Eigen::Vector3d,
@@ -800,7 +817,8 @@ PYBIND11_MODULE(rmf_adapter, m) {
     &agv::EasyFullControl::RobotState::battery_state_of_charge,
     &agv::EasyFullControl::RobotState::set_battery_state_of_charge);
 
-  py::class_<agv::EasyFullControl::RobotConfiguration>(m_easy_full_control, "RobotConfiguration")
+  py::class_<agv::EasyFullControl::RobotConfiguration>(m_easy_full_control,
+    "RobotConfiguration")
   .def(py::init<std::vector<std::string>>(),
     py::arg("compatible_chargers"))
   .def_property(
@@ -808,7 +826,8 @@ PYBIND11_MODULE(rmf_adapter, m) {
     &agv::EasyFullControl::RobotConfiguration::compatible_chargers,
     &agv::EasyFullControl::RobotConfiguration::set_compatible_chargers);
 
-  py::class_<agv::EasyFullControl::RobotCallbacks>(m_easy_full_control, "RobotCallbacks")
+  py::class_<agv::EasyFullControl::RobotCallbacks>(m_easy_full_control,
+    "RobotCallbacks")
   .def(py::init<
       agv::EasyFullControl::NavigationRequest,
       agv::EasyFullControl::StopRequest,
@@ -831,7 +850,8 @@ PYBIND11_MODULE(rmf_adapter, m) {
     &agv::EasyFullControl::RobotCallbacks::with_localization
   );
 
-  py::class_<agv::EasyFullControl::CommandExecution>(m_easy_full_control, "CommandExecution")
+  py::class_<agv::EasyFullControl::CommandExecution>(m_easy_full_control,
+    "CommandExecution")
   .def("finished", &agv::EasyFullControl::CommandExecution::finished)
   .def("okay", &agv::EasyFullControl::CommandExecution::okay)
   .def(
@@ -850,86 +870,97 @@ PYBIND11_MODULE(rmf_adapter, m) {
     py::arg("map"),
     py::arg("path"),
     py::arg("hold") = 0.0)
-  .def_property_readonly("identifier", &agv::EasyFullControl::CommandExecution::identifier);
+  .def_property_readonly("identifier",
+    &agv::EasyFullControl::CommandExecution::identifier);
 
-  py::class_<agv::EasyFullControl::Destination>(m_easy_full_control, "Destination")
+  py::class_<agv::EasyFullControl::Destination>(m_easy_full_control,
+    "Destination")
   .def_property_readonly("map", &agv::EasyFullControl::Destination::map)
-  .def_property_readonly("position", &agv::EasyFullControl::Destination::position)
+  .def_property_readonly("position",
+    &agv::EasyFullControl::Destination::position)
   .def_property_readonly("xy", &agv::EasyFullControl::Destination::xy)
   .def_property_readonly("yaw", &agv::EasyFullControl::Destination::yaw)
-  .def_property_readonly("graph_index", &agv::EasyFullControl::Destination::graph_index)
+  .def_property_readonly("graph_index",
+    &agv::EasyFullControl::Destination::graph_index)
   .def_property_readonly("name", &agv::EasyFullControl::Destination::name)
   .def_property_readonly("dock", &agv::EasyFullControl::Destination::dock)
-  .def_property_readonly("speed_limit", &agv::EasyFullControl::Destination::speed_limit)
-  .def_property_readonly("inside_lift", &agv::EasyFullControl::Destination::inside_lift);
+  .def_property_readonly("speed_limit",
+    &agv::EasyFullControl::Destination::speed_limit)
+  .def_property_readonly("inside_lift",
+    &agv::EasyFullControl::Destination::inside_lift);
 
-  py::class_<agv::EasyFullControl::FleetConfiguration>(m_easy_full_control, "FleetConfiguration")
+  py::class_<agv::EasyFullControl::FleetConfiguration>(m_easy_full_control,
+    "FleetConfiguration")
   .def(py::init([]( // Lambda function to convert reference to shared ptr
-        std::string& fleet_name,
-        std::optional<std::unordered_map<std::string, agv::Transformation>> transformations_to_robot_coordinates,
-        std::unordered_map<std::string, agv::EasyFullControl::RobotConfiguration> known_robot_configurations,
-        rmf_traffic::agv::VehicleTraits& traits,
-        rmf_traffic::agv::Graph& graph,
-        battery::BatterySystem& battery_system,
-        battery::SimpleMotionPowerSink& motion_sink,
-        battery::SimpleDevicePowerSink& ambient_sink,
-        battery::SimpleDevicePowerSink& tool_sink,
-        double recharge_threshold,
-        double recharge_soc,
-        bool account_for_battery_drain,
-        std::unordered_map<std::string, ModifiedConsiderRequest> task_consideration,
-        std::unordered_map<std::string, ModifiedConsiderRequest> action_consideration,
-        std::string& finishing_request_string,
-        bool skip_rotation_commands,
-        std::optional<std::string> server_uri,
-        rmf_traffic::Duration max_delay,
-        rmf_traffic::Duration update_interval,
-        bool default_responsive_wait,
-        double default_max_merge_waypoint_distance,
-        double default_max_merge_lane_distance,
-        double default_min_lane_length)
-        {
-          rmf_task::ConstRequestFactoryPtr finishing_request;
-          if (finishing_request_string == "charge")
-          {
-            finishing_request =
-            std::make_shared<rmf_task::requests::ChargeBatteryFactory>();
-          }
-          else if (finishing_request_string == "park")
-          {
-            finishing_request =
-            std::make_shared<rmf_task::requests::ParkRobotFactory>();
-          }
-          else
-          {
-            finishing_request = nullptr;
-          }
-          return agv::EasyFullControl::FleetConfiguration(
-              fleet_name,
-              std::move(transformations_to_robot_coordinates),
-              std::move(known_robot_configurations),
-              std::make_shared<rmf_traffic::agv::VehicleTraits>(traits),
-              std::make_shared<rmf_traffic::agv::Graph>(graph),
-              std::make_shared<battery::BatterySystem>(battery_system),
-              std::make_shared<battery::SimpleMotionPowerSink>(motion_sink),
-              std::make_shared<battery::SimpleDevicePowerSink>(ambient_sink),
-              std::make_shared<battery::SimpleDevicePowerSink>(tool_sink),
-              recharge_threshold,
-              recharge_soc,
-              account_for_battery_drain,
-              convert(task_consideration),
-              convert(action_consideration),
-              finishing_request,
-              skip_rotation_commands,
-              server_uri,
-              max_delay,
-              update_interval,
-              default_responsive_wait,
-              default_max_merge_waypoint_distance,
-              default_max_merge_lane_distance,
-              default_min_lane_length);
-        }
-        ),
+      std::string& fleet_name,
+      std::optional<std::unordered_map<std::string,
+      agv::Transformation>> transformations_to_robot_coordinates,
+      std::unordered_map<std::string,
+      agv::EasyFullControl::RobotConfiguration> known_robot_configurations,
+      rmf_traffic::agv::VehicleTraits& traits,
+      rmf_traffic::agv::Graph& graph,
+      battery::BatterySystem& battery_system,
+      battery::SimpleMotionPowerSink& motion_sink,
+      battery::SimpleDevicePowerSink& ambient_sink,
+      battery::SimpleDevicePowerSink& tool_sink,
+      double recharge_threshold,
+      double recharge_soc,
+      bool account_for_battery_drain,
+      std::unordered_map<std::string,
+      ModifiedConsiderRequest> task_consideration,
+      std::unordered_map<std::string,
+      ModifiedConsiderRequest> action_consideration,
+      std::string& finishing_request_string,
+      bool skip_rotation_commands,
+      std::optional<std::string> server_uri,
+      rmf_traffic::Duration max_delay,
+      rmf_traffic::Duration update_interval,
+      bool default_responsive_wait,
+      double default_max_merge_waypoint_distance,
+      double default_max_merge_lane_distance,
+      double default_min_lane_length)
+    {
+      rmf_task::ConstRequestFactoryPtr finishing_request;
+      if (finishing_request_string == "charge")
+      {
+        finishing_request =
+        std::make_shared<rmf_task::requests::ChargeBatteryFactory>();
+      }
+      else if (finishing_request_string == "park")
+      {
+        finishing_request =
+        std::make_shared<rmf_task::requests::ParkRobotFactory>();
+      }
+      else
+      {
+        finishing_request = nullptr;
+      }
+      return agv::EasyFullControl::FleetConfiguration(
+        fleet_name,
+        std::move(transformations_to_robot_coordinates),
+        std::move(known_robot_configurations),
+        std::make_shared<rmf_traffic::agv::VehicleTraits>(traits),
+        std::make_shared<rmf_traffic::agv::Graph>(graph),
+        std::make_shared<battery::BatterySystem>(battery_system),
+        std::make_shared<battery::SimpleMotionPowerSink>(motion_sink),
+        std::make_shared<battery::SimpleDevicePowerSink>(ambient_sink),
+        std::make_shared<battery::SimpleDevicePowerSink>(tool_sink),
+        recharge_threshold,
+        recharge_soc,
+        account_for_battery_drain,
+        convert(task_consideration),
+        convert(action_consideration),
+        finishing_request,
+        skip_rotation_commands,
+        server_uri,
+        max_delay,
+        update_interval,
+        default_responsive_wait,
+        default_max_merge_waypoint_distance,
+        default_max_merge_lane_distance,
+        default_min_lane_length);
+    }
+    ),
     py::arg("fleet_name"),
     py::arg("transformations_to_robot_coordinates"),
     py::arg("known_robot_configurations"),
@@ -953,7 +984,8 @@ PYBIND11_MODULE(rmf_adapter, m) {
     py::arg("default_max_merge_waypoint_distance") = 1e-3,
     py::arg("default_max_merge_lane_distance") = 0.3,
     py::arg("default_min_lane_length") = 1e-8)
-  .def_static("from_config_files", &agv::EasyFullControl::FleetConfiguration::from_config_files,
+  .def_static("from_config_files",
+    &agv::EasyFullControl::FleetConfiguration::from_config_files,
     py::arg("config_file"),
     py::arg("nav_graph_path"),
     py::arg("server_uri") = std::nullopt)
