@@ -12,6 +12,7 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>backward_ros</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>
   <depend>rmf_utils</depend>
