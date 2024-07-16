@@ -721,6 +721,36 @@ void RobotUpdateHandle::release_lift()
 }
 
 //==============================================================================
+RobotUpdateHandle::LiftDestination::LiftDestination()
+: _pimpl(rmf_utils::make_impl<Implementation>())
+{
+  //Do nothing
+}
+
+//==============================================================================
+const std::string& RobotUpdateHandle::LiftDestination::lift() const
+{
+  return _pimpl->lift;
+}
+
+//==============================================================================
+const std::string& RobotUpdateHandle::LiftDestination::level() const
+{
+  return _pimpl->level;
+}
+
+//==============================================================================
+std::optional<RobotUpdateHandle::LiftDestination>
+RobotUpdateHandle::lift_destination() const
+{
+  if (const auto context = _pimpl->get_context())
+  {
+    return context->final_lift_destination();
+  }
+  return std::nullopt;
+}
+
+//==============================================================================
 RobotUpdateHandle::RobotUpdateHandle()
 {
   // Do nothing
