@@ -293,7 +293,8 @@ LegacyTask::StatusMsg RequestLift::ActivePhase::_get_status(
     lift_state->lift_name == _lift_name &&
     lift_state->current_floor == _destination &&
     lift_state->door_state == LiftState::DOOR_OPEN &&
-    lift_state->session_id == _context->requester_id())
+    lift_state->session_id == _context->requester_id() &&
+    lift_state->current_mode == LiftState::MODE_AGV)
   {
     RCLCPP_INFO(
       _context->node()->get_logger(),
