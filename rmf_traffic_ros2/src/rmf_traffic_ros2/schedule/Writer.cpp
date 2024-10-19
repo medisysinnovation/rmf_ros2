@@ -367,7 +367,7 @@ public:
       transport->inconsistency_sub =
         node->create_subscription<InconsistencyMsg>(
         ScheduleInconsistencyTopicName,
-        rclcpp::SystemDefaultsQoS().reliable(),
+        rclcpp::SystemDefaultsQoS().keep_last(100).reliable(),
         [w = transport->weak_from_this()](const InconsistencyMsg::UniquePtr msg)
         {
           if (const auto self = w.lock())
