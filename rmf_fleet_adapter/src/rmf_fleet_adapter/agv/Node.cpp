@@ -34,8 +34,7 @@ std::shared_ptr<Node> Node::make(
   auto node = std::shared_ptr<Node>(
     new Node(std::move(worker), node_name, options));
 
-  auto default_qos = rclcpp::SystemDefaultsQoS();
-  default_qos.keep_last(100);
+  auto default_qos = rclcpp::SystemDefaultsQoS().keep_last(100);
   auto transient_qos = rclcpp::SystemDefaultsQoS()
     .reliable().keep_last(100).transient_local();
 
@@ -77,7 +76,7 @@ std::shared_ptr<Node> Node::make(
 
   node->_emergency_notice_obs =
     node->create_observable<EmergencyNotice>(
-    rmf_traffic_ros2::EmergencyTopicName, default_qos);
+    rmf_traffic_ros2::EmergencyTopicName, transient_qos);
 
   node->_ingestor_request_pub =
     node->create_publisher<IngestorRequest>(
