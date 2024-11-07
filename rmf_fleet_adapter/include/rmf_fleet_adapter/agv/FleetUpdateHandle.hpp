@@ -391,6 +391,9 @@ public:
   FleetUpdateHandle& set_update_listener(
     std::function<void(const nlohmann::json&)> listener);
 
+  // Getter for the update listener
+  std::function<void(const nlohmann::json&)> get_update_listener() const;
+
   /// Get the rclcpp::Node that this fleet update handle will be using for
   /// communication.
   std::shared_ptr<rclcpp::Node> node();

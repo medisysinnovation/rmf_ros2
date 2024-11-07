@@ -2285,6 +2285,15 @@ FleetUpdateHandle& FleetUpdateHandle::set_update_listener(
 }
 
 //==============================================================================
+std::function<void(const nlohmann::json&)>
+FleetUpdateHandle::get_update_listener() const
+{
+  std::unique_lock<std::mutex> lock(*_pimpl->update_callback_mutex);
+  return _pimpl->update_callback;
+}
+
+
+//==============================================================================
 std::shared_ptr<rclcpp::Node> FleetUpdateHandle::node()
 {
   return _pimpl->node;

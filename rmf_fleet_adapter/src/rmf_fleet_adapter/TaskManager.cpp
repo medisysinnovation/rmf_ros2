@@ -1810,6 +1810,22 @@ void TaskManager::_validate_and_publish_websocket(
     return;
   }
   client->publish(msg);
+
+  auto fleet_handle = _fleet_handle.lock();
+  if (!fleet_handle)
+  {
+    RCLCPP_ERROR(
+      _context->node()->get_logger(),
+      "Unable to lock _fleet_handle within TaskManager of robot [%s]",
+      _context->name().c_str());
+    return;
+  }
+
+  const auto fleet_update_listener = fleet_handle->get_update_listener();
+  if (fleet_update_listener)
+  {
+    fleet_update_listener(msg);
+  }
 }
 
 //==============================================================================
