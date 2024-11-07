@@ -1496,9 +1496,9 @@ void ScheduleNode::receive_proposal(const ConflictProposal& msg)
   room.check_cache({});
 
   // TODO(MXG): This should be removed once we have a negotiation visualizer
-  rmf_traffic_ros2::schedule::print_negotiation_status(
-    msg.conflict_version,
-    negotiation);
+  // rmf_traffic_ros2::schedule::print_negotiation_status(
+  //   msg.conflict_version,
+  //   negotiation);
   open->update_state_msg(msg.conflict_version);
 
   if (negotiation.ready())
@@ -1589,9 +1589,9 @@ void ScheduleNode::receive_rejection(const ConflictRejection& msg)
   room.check_cache({});
 
   // TODO(MXG): This should be removed once we have a negotiation visualizer
-  rmf_traffic_ros2::schedule::print_negotiation_status(
-    msg.conflict_version,
-    negotiation);
+  // rmf_traffic_ros2::schedule::print_negotiation_status(
+  //   msg.conflict_version,
+  //   negotiation);
   open->update_state_msg(msg.conflict_version);
 
   publish_negotiation_states();
@@ -1633,9 +1633,9 @@ void ScheduleNode::receive_forfeit(const ConflictForfeit& msg)
   room.check_cache({});
 
   // TODO(MXG): This should be removed once we have a negotiation visualizer
-  rmf_traffic_ros2::schedule::print_negotiation_status(
-    msg.conflict_version,
-    negotiation);
+  // rmf_traffic_ros2::schedule::print_negotiation_status(
+  //   msg.conflict_version,
+  //   negotiation);
   open->update_state_msg(msg.conflict_version);
 
   if (negotiation.complete())

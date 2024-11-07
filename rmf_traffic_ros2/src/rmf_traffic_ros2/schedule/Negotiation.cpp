@@ -756,7 +756,7 @@ public:
       }
     }
 
-    print_negotiation_status(msg.conflict_version, negotiation);
+    //print_negotiation_status(msg.conflict_version, negotiation);
   }
 
   void receive_conclusion(const Conclusion& msg)
