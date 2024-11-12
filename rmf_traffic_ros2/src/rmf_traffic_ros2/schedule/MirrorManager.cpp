@@ -426,7 +426,7 @@ public:
     if (!node)
       return;
 
-    RCLCPP_INFO(
+    RCLCPP_DEBUG(
       node->get_logger(),
       "Requesting new schedule update because update timed out");
     request_update(mirror->latest_version());
@@ -444,7 +444,7 @@ public:
     {
       request.version = minimum_version.value();
       request.full_update = false;
-      RCLCPP_INFO(
+      RCLCPP_DEBUG(
         node->get_logger(),
         "[rmf_traffic_ros2::MirrorManager::request_update] Requesting changes "
         "for query ID [%ld] since version [%lu]",
@@ -453,7 +453,7 @@ public:
     }
     else
     {
-      RCLCPP_INFO(
+      RCLCPP_DEBUG(
         node->get_logger(),
         "[rmf_traffic_ros2::MirrorManager::request_update] Requesting changes "
         "for query ID [%ld] since beginning of recorded history",
