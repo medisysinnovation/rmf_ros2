@@ -204,7 +204,7 @@ TaskManagerPtr TaskManager::make(
   }
 
   mgr->_update_timer = mgr->_context->node()->try_create_wall_timer(
-    std::chrono::milliseconds(100),
+    std::chrono::milliseconds(500),
     [w = mgr->weak_from_this()]()
     {
       if (const auto self = w.lock())
@@ -2207,7 +2207,12 @@ std::function<void()> TaskManager::_task_finished(std::string id)
         return;
 
       // Publish the final state of the task before destructing it
-      self->_publish_task_state();
+      for (int i = 0; i < 5; ++i)
+      {
+        self->_publish_task_state();
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+
       self->_active_task = ActiveTask();
       self->_context->current_task_id(std::nullopt);
 
