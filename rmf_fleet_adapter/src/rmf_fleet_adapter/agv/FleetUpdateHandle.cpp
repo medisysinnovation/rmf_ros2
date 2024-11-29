@@ -1610,7 +1610,9 @@ void FleetUpdateHandle::add_robot(
                   ss << "Failed negotiation for [" << c->requester_id()
                      << "] with these starts:"
                      << print_starts(c->location(), graph);
-                  std::cout << ss.str() << std::endl;
+
+                  //CW comment out logging
+                  //std::cout << ss.str() << std::endl;
 
                   auto& last_time = *last_interrupt_time;
                   const auto now = std::chrono::steady_clock::now();
