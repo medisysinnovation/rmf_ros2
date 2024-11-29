@@ -1236,8 +1236,23 @@ bool TaskManager::cancel_task(
   const std::string& task_id,
   std::vector<std::string> labels)
 {
+
+  RCLCPP_INFO(
+    _context->node()->get_logger(),
+    "[%s] - Attempting to cancel TaskID: [%s]",
+    _context->requester_id().c_str(),
+    task_id.c_str());
+
   if (_active_task && _active_task.id() == task_id)
   {
+
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] - TaskID: [%s] is currently active. Cancelling it.",
+      _context->requester_id().c_str(),
+      task_id.c_str());
+
+
     _task_state_update_available = true;
     _active_task.cancel(std::move(labels), _context->now());
     return true;
@@ -1247,10 +1262,34 @@ bool TaskManager::cancel_task(
   // unordered_sets and perform a lookup to see which function to call.
   std::lock_guard<std::mutex> lock(_mutex);
   if (_cancel_task_from_dispatch_queue(task_id, labels))
+  {
+
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] - TaskID: [%s] was found in the dispatch queue and has been cancelled.",
+      _context->requester_id().c_str(),
+      task_id.c_str());
+
+
     return true;
+  }
 
   if (_cancel_task_from_direct_queue(task_id, labels))
+  {
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] - TaskID: [%s] was found in the direct queue and has been cancelled.",
+      _context->requester_id().c_str(),
+      task_id.c_str());
+
     return true;
+  }
+
+  RCLCPP_WARN(
+    _context->node()->get_logger(),
+    "[%s] - TaskID: [%s] was not found. Cancellation failed.",
+    _context->requester_id().c_str(),
+    task_id.c_str());
 
   return false;
 }
@@ -1260,8 +1299,19 @@ bool TaskManager::kill_task(
   const std::string& task_id,
   std::vector<std::string> labels)
 {
+  RCLCPP_INFO(
+    _context->node()->get_logger(),
+    "[%s] - Attempting to kill TaskID: [%s]",
+    _context->requester_id().c_str(),
+    task_id.c_str());
+
   if (_active_task && _active_task.id() == task_id)
   {
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] - TaskID: [%s] is currently active. Killing it.",
+      _context->requester_id().c_str(),
+      task_id.c_str());
     _task_state_update_available = true;
     _active_task.kill(std::move(labels), _context->now());
     return true;
@@ -1269,11 +1319,31 @@ bool TaskManager::kill_task(
 
   std::lock_guard<std::mutex> lock(_mutex);
   if (_cancel_task_from_dispatch_queue(task_id, labels))
+  {
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] - TaskID: [%s] was found in the dispatch queue and has been killed.",
+      _context->requester_id().c_str(),
+      task_id.c_str());
+
     return true;
+  }
 
   if (_cancel_task_from_direct_queue(task_id, labels))
-    return true;
+  {
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] - TaskID: [%s] was found in the direct queue and has been killed.",
+      _context->requester_id().c_str(),
+      task_id.c_str());
 
+    return true;
+  }
+  RCLCPP_WARN(
+    _context->node()->get_logger(),
+    "[%s] - TaskID: [%s] was not found. Kill operation failed.",
+    _context->requester_id().c_str(),
+    task_id.c_str());
   return false;
 }
 
@@ -2212,6 +2282,12 @@ std::function<void()> TaskManager::_task_finished(std::string id)
         self->_publish_task_state();
         std::this_thread::sleep_for(std::chrono::seconds(1));
       }
+
+      RCLCPP_INFO(
+        self->_context->node()->get_logger(),
+        "[%s] - TaskID: [%s] has been completed",
+        self->_context->requester_id().c_str(),
+        id.c_str());
 
       self->_active_task = ActiveTask();
       self->_context->current_task_id(std::nullopt);
