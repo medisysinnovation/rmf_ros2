@@ -40,6 +40,18 @@
 
 namespace rmf_fleet_adapter {
 
+struct PendingTimeInfo
+{
+  int64_t unix_millis_finish_time;
+  int64_t original_estimate_millis;
+};
+
+struct PendingInfo
+{
+  rmf_task::Task::Description::Info info;
+  std::optional<PendingTimeInfo> time;
+};
+
 //==============================================================================
 /// This task manager is a first attempt at managing multiple tasks per fleet.
 /// This is a simple implementation that only makes a modest attempt at being
@@ -118,7 +130,7 @@ public:
   void set_queue(const std::vector<Assignment>& assignments);
 
   /// Get the non-charging requests among pending tasks
-  const std::vector<rmf_task::ConstRequestPtr> requests() const;
+  const std::vector<rmf_task::ConstRequestPtr> dispatched_requests() const;
 
   std::optional<std::string> current_task_id() const;
 
@@ -142,6 +154,17 @@ public:
   /// The list will contain upto 100 latest task ids only.
   const std::vector<std::string>& get_executed_tasks() const;
 
+  /// Get the list of task ids for tasks that have completed execution.
+  /// The list will contain upto 100 latest task ids only.
+  const std::vector<std::string>& get_completed_tasks() const;
+
+  /// Get task_state information for the given task_id from
+  /// the completed_task_registry
+  const nlohmann::json get_completed_task_state(const std::string& task_id);
+
+  /// Returns true if the task_id is in _completed_task_registry
+  bool is_task_completed(const std::string& task_id);
+
   RobotModeMsg robot_mode() const;
 
   /// Get a vector of task logs that are validated against the schema
@@ -161,6 +184,9 @@ public:
   /// message is not validated before being returned).
   nlohmann::json submit_direct_request(
     const nlohmann::json& task_request,
+    const std::string& request_id);
+
+  std::optional<DirectAssignment> get_assignment_from_direct_queue(
     const std::string& request_id);
 
   class Interruption
@@ -197,17 +223,32 @@ public:
     std::vector<std::string> labels,
     std::function<void()> robot_is_interrupted);
 
-  /// Cancel a task for this robot. Returns true if the task was being managed
+  /// Cancel a task for this robot.
+  /// Returns true if the task was being managed
   /// by this task manager, or false if it was not.
   bool cancel_task(
     const std::string& task_id,
     std::vector<std::string> labels);
 
-  /// Kill a task for this robot. Returns true if the task was being managed by
+  /// Kill a task for this robot.
+  /// Returns true if the task was being managed by
   /// this task manager, or false if it was not.
   bool kill_task(
     const std::string& task_id,
     std::vector<std::string> labels);
+
+  /// Cancel a task for this robot while marking it completed.
+  /// Returns true if
+  /// the task was being managed by this task manager, or false if it was not.
+  bool quiet_cancel_task(
+    const std::string& task_id,
+    std::vector<std::string> labels);
+
+  /// Begin the next task for this robot if there is a new task ready to perform
+  /// and the robot is not already performing a task or caught in an emergency or
+  /// interruption. If no task is being performed and no new task is ready, the
+  /// idle behavior will be triggered.
+  void _begin_next_task();
 
 private:
 
@@ -228,6 +269,7 @@ private:
     const std::string& id() const;
 
     void publish_task_state(TaskManager& mgr);
+    nlohmann::json get_task_state();
 
     operator bool() const
     {
@@ -244,9 +286,17 @@ private:
 
     bool is_finished() const;
 
+    bool is_quiet_cancel() const;
+
+    bool is_cancelled() const;
+
     // Any unknown tokens that were included will be returned
     std::vector<std::string> remove_interruption(
       std::vector<std::string> for_tokens,
+      std::vector<std::string> labels,
+      rmf_traffic::Time time);
+
+    void quiet_cancel(
       std::vector<std::string> labels,
       rmf_traffic::Time time);
 
@@ -301,6 +351,7 @@ private:
     std::unordered_map<uint64_t, SkipInfo> _skip_info_map;
 
     uint64_t _next_token = 0;
+    bool _quiet_cancel = false;
   };
 
   friend class ActiveTask;
@@ -318,12 +369,21 @@ private:
   std::optional<std::string> _emergency_pullover_interrupt_token;
   ActiveTask _emergency_pullover;
   uint16_t _count_emergency_pullover = 0;
+
   // Queue for dispatched tasks
   std::vector<Assignment> _queue;
+
+  std::unordered_map<
+    rmf_task::ConstRequestPtr,
+    PendingInfo
+  > _pending_task_info;
+
   // An ID to keep track of the FIFO order of direct tasks
   std::size_t _next_sequence_number;
+
   // Queue for directly assigned tasks
   DirectQueue _direct_queue;
+
   rmf_utils::optional<Start> _expected_finish_location;
   rxcpp::subscription _task_sub;
   rxcpp::subscription _emergency_sub;
@@ -338,16 +398,26 @@ private:
   // TODO: Eliminate the need for a mutex by redesigning the use of the task
   // manager so that modifications of shared data only happen on designated
   // rxcpp worker
-  mutable std::mutex _mutex;
+  mutable std::recursive_mutex _mutex;
   rclcpp::TimerBase::SharedPtr _task_timer;
   rclcpp::TimerBase::SharedPtr _retreat_timer;
   rclcpp::TimerBase::SharedPtr _update_timer;
   bool _task_state_update_available = true;
   std::chrono::steady_clock::time_point _last_update_time;
 
-  // Container to keep track of tasks that have been started by this TaskManager
+  // Container to keep track of tasks that have been started
+  // by this TaskManager
   // Use the _register_executed_task() to populate this container.
   std::vector<std::string> _executed_task_registry;
+
+  // Container to keep track of tasks that have been completed by
+  // this TaskManager
+  // Use the _register_completed_task() to populate this container.
+  std::unordered_map<std::string, nlohmann::json> _completed_task_registry = {};
+
+  // Container to keep track the order of task completion,
+  // used in _register_completed_task to delete oldest completed task.
+  std::deque<std::string> _completed_task_order;
 
   // TravelEstimator for caching travel estimates for automatic charging
   // retreat. TODO(YV): Expose the TaskPlanner's TravelEstimator.
@@ -378,9 +448,6 @@ private:
 
   // Map task_id to task_log.json for all tasks managed by this TaskManager
   std::unordered_map<std::string, nlohmann::json> _task_logs = {};
-
-  /// Callback for task timer which begins next task if its deployment time has passed
-  void _begin_next_task();
 
   // Interrupts that were issued when there was no active task. They will be
   // applied when a task becomes active.
@@ -433,6 +500,12 @@ private:
     const Assignment& assignment,
     std::vector<std::string> labels);
 
+  /// Take all dispatched assignments out of the queue, leaving the queue empty.
+  std::vector<Assignment> _drain_dispatched_assignments();
+
+  /// Take all direct assignments out of the queue, leaving the queue empty.
+  std::vector<Assignment> _drain_direct_assignments();
+
   /// Cancel a task that is in the dispatch queue. Returns false if the task
   /// was not present.
   bool _cancel_task_from_dispatch_queue(
@@ -444,6 +517,10 @@ private:
   bool _cancel_task_from_direct_queue(
     const std::string& task_id,
     const std::vector<std::string>& labels);
+
+  /// Check if task_id is in the direct queue
+  bool _is_task_in_direct_queue(
+    const std::string& task_id);
 
   /// Schema loader for validating jsons
   void _schema_loader(
@@ -521,6 +598,12 @@ private:
   /// The input task id will be inserted into the registry such that the max
   /// size of the registry is 100.
   void _register_executed_task(const std::string& id);
+
+  /// Function to register the task id of a task that has completed execution
+  /// The input task id will be inserted into the registry such that the max
+  /// size of the registry is 100.
+  void _register_completed_task(const std::string& id,
+    nlohmann::json task_state);
 
   void _populate_task_summary(
     std::shared_ptr<LegacyTask> task,

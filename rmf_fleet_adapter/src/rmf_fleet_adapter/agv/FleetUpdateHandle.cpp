@@ -1485,7 +1485,7 @@ auto FleetUpdateHandle::Implementation::aggregate_expectations() const
       continue;
 
     expect.states.push_back(t.second->expected_finish_state());
-    const auto requests = t.second->requests();
+    const auto requests = t.second->dispatched_requests();
     expect.pending_requests.insert(
       expect.pending_requests.end(), requests.begin(), requests.end());
   }

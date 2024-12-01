@@ -340,7 +340,8 @@ nlohmann::json& copy_phase_data(
   nlohmann::json& phases,
   const rmf_task::Phase::Active& snapshot,
   rmf_task::Log::Reader& reader,
-  nlohmann::json& all_phase_logs)
+  nlohmann::json& all_phase_logs,
+  bool quiet_cancel = false)
 {
   const auto& tag = *snapshot.tag();
   const auto& header = tag.header();
@@ -373,7 +374,11 @@ nlohmann::json& copy_phase_data(
     auto& event_state = event_states[std::to_string(top->id())];
     event_state["id"] = top->id();
     event_state["status"] = status_to_string(top->status());
-
+    if (quiet_cancel && top->status() == rmf_task::Event::Status::Canceled)
+    {
+      event_state["status"] = status_to_string(
+        rmf_task::Event::Status::Completed);
+    }
     // TODO(MXG): Keep a VersionedString Reader to know when to actually update
     // this string
     event_state["name"] =
@@ -508,7 +513,7 @@ void TaskManager::ActiveTask::publish_task_state(TaskManager& mgr)
   {
     const auto& snapshot = completed->snapshot();
     auto& phase = copy_phase_data(
-      phases, *snapshot, mgr._log_reader, phase_logs);
+      phases, *snapshot, mgr._log_reader, phase_logs, _quiet_cancel);
     phase["unix_millis_start_time"] =
       to_millis(completed->start_time().time_since_epoch()).count();
 
@@ -523,7 +528,8 @@ void TaskManager::ActiveTask::publish_task_state(TaskManager& mgr)
   if (active_phase == nullptr)
     return;
   auto& active =
-    copy_phase_data(phases, *active_phase, mgr._log_reader, phase_logs);
+    copy_phase_data(phases, *active_phase, mgr._log_reader, phase_logs,
+      _quiet_cancel);
   if (_task->active_phase_start_time().has_value())
   {
     active["unix_millis_start_time"] =
@@ -550,7 +556,7 @@ void TaskManager::ActiveTask::publish_task_state(TaskManager& mgr)
     }
   }
 
-  if (_cancellation.has_value())
+  if (_cancellation.has_value() && !_quiet_cancel)
     _state_msg["cancellation"] = *_cancellation;
 
   if (_killed.has_value())
@@ -566,6 +572,12 @@ void TaskManager::ActiveTask::publish_task_state(TaskManager& mgr)
     }
   }
 
+  if (_quiet_cancel &&
+    _task->status_overview() == rmf_task::Event::Status::Canceled)
+  {
+    _state_msg["status"] = status_to_string(rmf_task::Event::Status::Completed);
+  }
+
   task_state_update["data"] = _state_msg;
 
   static const auto task_update_validator =
@@ -579,6 +591,17 @@ void TaskManager::ActiveTask::publish_task_state(TaskManager& mgr)
   static const auto log_update_validator =
     mgr._make_validator(rmf_api_msgs::schemas::task_log_update);
   mgr._validate_and_publish_websocket(task_log_update, log_update_validator);
+
+  // std::cout << ">>>>> task state published to websocket "
+  //           << " ["<<  _state_msg["assigned_to"]["name"] << "]"
+  //           << " task_id: [" <<  booking.id() << "]"
+  //           << std::endl;
+}
+
+//==============================================================================
+nlohmann::json TaskManager::ActiveTask::get_task_state()
+{
+  return _state_msg;
 }
 
 //==============================================================================
@@ -650,6 +673,18 @@ bool TaskManager::ActiveTask::is_finished() const
 }
 
 //==============================================================================
+bool TaskManager::ActiveTask::is_quiet_cancel() const
+{
+  return _quiet_cancel;
+}
+
+
+bool TaskManager::ActiveTask::is_cancelled() const
+{
+  return _cancellation.has_value();
+}
+
+//==============================================================================
 std::vector<std::string> TaskManager::ActiveTask::remove_interruption(
   std::vector<std::string> for_tokens,
   std::vector<std::string> labels,
@@ -711,8 +746,29 @@ void TaskManager::ActiveTask::cancel(
   cancellation["labels"] = std::move(labels);
 
   _cancellation = std::move(cancellation);
+  _quiet_cancel = false;
   _task->cancel();
 }
+
+//==============================================================================
+void TaskManager::ActiveTask::quiet_cancel(
+  std::vector<std::string> labels,
+  rmf_traffic::Time time)
+{
+  if (_cancellation.has_value())
+    return;
+
+  nlohmann::json cancellation;
+  cancellation["unix_millis_request_time"] =
+    to_millis(time.time_since_epoch()).count();
+
+  cancellation["labels"] = std::move(labels);
+
+  _cancellation = std::move(cancellation);
+  _quiet_cancel = true;
+  _task->cancel();
+}
+
 
 //==============================================================================
 void TaskManager::ActiveTask::kill(
@@ -826,17 +882,7 @@ bool TaskManager::cancel_task_if_present(const std::string& task_id)
     return true;
   }
 
-  std::lock_guard<std::mutex> lock(_mutex);
-  for (auto it = _queue.begin(); it != _queue.end(); ++it)
-  {
-    if (it->request()->booking()->id() == task_id)
-    {
-      _queue.erase(it);
-      return true;
-    }
-  }
-
-  return false;
+  return _cancel_task_from_dispatch_queue(task_id, {"DispatchRequest"});
 }
 
 //==============================================================================
@@ -855,7 +901,7 @@ std::string TaskManager::robot_status() const
 //==============================================================================
 auto TaskManager::expected_finish_state() const -> State
 {
-  std::lock_guard<std::mutex> lock(_mutex);
+  std::lock_guard<std::recursive_mutex> lock(_mutex);
   if (!_direct_queue.empty())
   {
     return _direct_queue.rbegin()->assignment.finish_state();
@@ -905,7 +951,7 @@ void TaskManager::enable_responsive_wait(bool value)
 
   if (_responsive_wait_enabled)
   {
-    std::lock_guard<std::mutex> guard(_mutex);
+    std::lock_guard<std::recursive_mutex> guard(_mutex);
     if (!_active_task && _queue.empty() && _direct_queue.empty() && !_waiting)
     {
       _begin_waiting();
@@ -920,7 +966,7 @@ void TaskManager::set_idle_task(rmf_task::ConstRequestFactoryPtr task)
     return;
 
   _idle_task = std::move(task);
-  std::lock_guard<std::mutex> guard(_mutex);
+  std::lock_guard<std::recursive_mutex> guard(_mutex);
   if (!_active_task && _queue.empty() && _direct_queue.empty())
   {
     _begin_waiting();
@@ -934,7 +980,7 @@ void TaskManager::set_queue(
   // We indent this block as _mutex is also locked in the _begin_next_task()
   // function that is called at the end of this function.
   {
-    std::lock_guard<std::mutex> guard(_mutex);
+    std::lock_guard<std::recursive_mutex> guard(_mutex);
     // Do not remove automatic task if assignments is empty. See Issue #138
     if (assignments.empty() &&
       _queue.size() == 1 &&
@@ -973,12 +1019,13 @@ void TaskManager::set_queue(
 }
 
 //==============================================================================
-const std::vector<rmf_task::ConstRequestPtr> TaskManager::requests() const
+const std::vector<rmf_task::ConstRequestPtr> TaskManager::dispatched_requests()
+const
 {
   using namespace rmf_task::requests;
   std::vector<rmf_task::ConstRequestPtr> requests;
   requests.reserve(_queue.size());
-  std::lock_guard<std::mutex> lock(_mutex);
+  std::lock_guard<std::recursive_mutex> lock(_mutex);
   for (const auto& task : _queue)
   {
     if (task.request()->booking()->automatic())
@@ -1041,6 +1088,99 @@ nlohmann::json TaskManager::submit_direct_request(
 
   const auto& fleet = _context->group();
   const auto& robot = _context->name();
+
+  //Check if currently executing
+  if (_active_task && _active_task.id() == request_id)
+  {
+    RCLCPP_WARN(
+      _context->node()->get_logger(),
+      "Ignoring submitted TaskID: [%s] as it is the current active task.",
+      request_id.c_str());
+
+    nlohmann::json response_json;
+    response_json["success"] = true;
+
+    nlohmann::json task_state = _active_task.get_task_state();
+    response_json["state"] = task_state;
+
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] Response: [%s]",
+      request_id.c_str(),
+      response_json.dump().c_str());
+
+    return response_json;
+  }
+  //Check if still in queue
+  else if (!_direct_queue.empty() && _is_task_in_direct_queue(request_id))
+  {
+    const auto assignment = get_assignment_from_direct_queue(request_id);
+
+    RCLCPP_WARN(
+      _context->node()->get_logger(),
+      "Ignoring submitted TaskID: [%s] as it is already in direct queue.",
+      request_id.c_str());
+
+    nlohmann::json response_json;
+    response_json["success"] = true;
+
+    nlohmann::json task_state;
+
+    nlohmann::json booking;
+    booking["id"] = request_id;
+
+    task_state["booking"] = booking;
+    task_state["detail"] = "TODO";
+    task_state["status"] = "queued";
+
+    auto& dispatch = task_state["dispatch"];
+    dispatch["status"] = "queued";
+
+    auto& assign = task_state["assigned_to"];
+    assign["group"] = fleet;
+    assign["name"] = robot;
+
+    response_json["state"] = task_state;
+
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] Response: [%s]",
+      request_id.c_str(),
+      response_json.dump().c_str());
+
+    return response_json;
+  }
+  //Check if completed
+  else if (is_task_completed(request_id))
+  {
+    RCLCPP_WARN(
+      _context->node()->get_logger(),
+      "Ignoring submitted TaskID: [%s] as it is already completed.",
+      request_id.c_str());
+
+    nlohmann::json task_state = get_completed_task_state(request_id);
+
+    nlohmann::json response_json;
+    response_json["success"] = true;
+
+    nlohmann::json booking;
+    booking["id"] = request_id;
+    task_state["booking"] = booking;
+
+    response_json["state"] = task_state;
+
+    RCLCPP_INFO(
+      _context->node()->get_logger(),
+      "[%s] Response: [%s]",
+      request_id.c_str(),
+      response_json.dump().c_str());
+
+    return response_json;
+  }
+  else
+  {
+    //noop
+  }
 
   const auto& impl =
     agv::FleetUpdateHandle::Implementation::get(*fleet_handle);
@@ -1129,7 +1269,7 @@ nlohmann::json TaskManager::submit_direct_request(
   };
   ++_next_sequence_number;
   {
-    std::lock_guard<std::mutex> lock(_mutex);
+    std::lock_guard<std::recursive_mutex> lock(_mutex);
     _direct_queue.insert(assignment);
   }
 
@@ -1237,7 +1377,7 @@ bool TaskManager::cancel_task(
   std::vector<std::string> labels)
 {
 
-  RCLCPP_INFO(
+  RCLCPP_DEBUG(
     _context->node()->get_logger(),
     "[%s] - Attempting to cancel TaskID: [%s]",
     _context->requester_id().c_str(),
@@ -1252,7 +1392,6 @@ bool TaskManager::cancel_task(
       _context->requester_id().c_str(),
       task_id.c_str());
 
-
     _task_state_update_available = true;
     _active_task.cancel(std::move(labels), _context->now());
     return true;
@@ -1260,7 +1399,7 @@ bool TaskManager::cancel_task(
 
   // TODO(YV): We could cache the task_ids of direct and dispatched tasks in
   // unordered_sets and perform a lookup to see which function to call.
-  std::lock_guard<std::mutex> lock(_mutex);
+  std::lock_guard<std::recursive_mutex> lock(_mutex);
   if (_cancel_task_from_dispatch_queue(task_id, labels))
   {
 
@@ -1269,7 +1408,6 @@ bool TaskManager::cancel_task(
       "[%s] - TaskID: [%s] was found in the dispatch queue and has been cancelled.",
       _context->requester_id().c_str(),
       task_id.c_str());
-
 
     return true;
   }
@@ -1285,7 +1423,7 @@ bool TaskManager::cancel_task(
     return true;
   }
 
-  RCLCPP_WARN(
+  RCLCPP_DEBUG(
     _context->node()->get_logger(),
     "[%s] - TaskID: [%s] was not found. Cancellation failed.",
     _context->requester_id().c_str(),
@@ -1299,7 +1437,7 @@ bool TaskManager::kill_task(
   const std::string& task_id,
   std::vector<std::string> labels)
 {
-  RCLCPP_INFO(
+  RCLCPP_DEBUG(
     _context->node()->get_logger(),
     "[%s] - Attempting to kill TaskID: [%s]",
     _context->requester_id().c_str(),
@@ -1317,7 +1455,7 @@ bool TaskManager::kill_task(
     return true;
   }
 
-  std::lock_guard<std::mutex> lock(_mutex);
+  std::lock_guard<std::recursive_mutex> lock(_mutex);
   if (_cancel_task_from_dispatch_queue(task_id, labels))
   {
     RCLCPP_INFO(
@@ -1339,11 +1477,28 @@ bool TaskManager::kill_task(
 
     return true;
   }
-  RCLCPP_WARN(
+
+  RCLCPP_DEBUG(
     _context->node()->get_logger(),
     "[%s] - TaskID: [%s] was not found. Kill operation failed.",
     _context->requester_id().c_str(),
     task_id.c_str());
+
+  return false;
+}
+
+//==============================================================================
+bool TaskManager::quiet_cancel_task(
+  const std::string& task_id,
+  std::vector<std::string> labels)
+{
+  if (_active_task && _active_task.id() == task_id)
+  {
+    _task_state_update_available = true;
+    _active_task.quiet_cancel(std::move(labels), _context->now());
+    return true;
+  }
+
   return false;
 }
 
@@ -1351,17 +1506,23 @@ bool TaskManager::kill_task(
 void TaskManager::_begin_next_task()
 {
   if (_active_task)
+  {
     return;
+  }
 
   if (_emergency_active)
+  {
     return;
+  }
 
-  std::lock_guard<std::mutex> guard(_mutex);
+  std::lock_guard<std::recursive_mutex> guard(_mutex);
 
   if (_queue.empty() && _direct_queue.empty())
   {
     if (!_waiting && !_finished_waiting)
+    {
       _begin_waiting();
+    }
 
     return;
   }
@@ -1424,6 +1585,7 @@ void TaskManager::_begin_next_task()
     {
       const auto info = assignment.request()->description()->generate_info(
         _context->make_get_state()(), *_context->task_parameters());
+
       RCLCPP_ERROR(
         _context->node()->get_logger(),
         "[rmf_fleet_adapter::TaskManager::_begin_next_task] Failed to "
@@ -1442,12 +1604,26 @@ void TaskManager::_begin_next_task()
       return;
     }
 
-    RCLCPP_INFO(
-      _context->node()->get_logger(),
-      "Beginning new task [%s] for [%s]. Remaining queue size: %ld",
-      _active_task.id().c_str(),
-      _context->requester_id().c_str(),
-      _queue.size());
+    if (is_next_task_direct)
+    {
+      RCLCPP_INFO(
+        _context->node()->get_logger(),
+        "Beginning new task [%s] for [%s] from direct queue. "
+        "Remaining queue size: %ld",
+        _active_task.id().c_str(),
+        _context->requester_id().c_str(),
+        _direct_queue.size());
+    }
+    else
+    {
+      RCLCPP_INFO(
+        _context->node()->get_logger(),
+        "Beginning new task [%s] for [%s] from dispatch queue. "
+        "Remaining queue size: %ld",
+        _active_task.id().c_str(),
+        _context->requester_id().c_str(),
+        _queue.size());
+    }
 
     _register_executed_task(_active_task.id());
   }
@@ -1642,7 +1818,10 @@ void TaskManager::_resume_from_emergency()
       self->_emergency_pullover = ActiveTask();
 
       if (!self->_emergency_pullover_interrupt_token.has_value())
+      {
+        self->_begin_next_task();
         return;
+      }
 
       if (self->_active_task)
       {
@@ -1689,7 +1868,7 @@ void TaskManager::retreat_to_charger()
     return;
 
   {
-    std::lock_guard<std::mutex> guard(_mutex);
+    std::lock_guard<std::recursive_mutex> guard(_mutex);
     if (_active_task || !_queue.empty())
       return;
   }
@@ -1740,6 +1919,7 @@ void TaskManager::retreat_to_charger()
       rmf_traffic_ros2::convert(_context->node()->now()),
       nullptr,
       true);
+
     const auto model = charging_request->description()->make_model(
       current_state.time().value(),
       parameters);
@@ -1762,7 +1942,7 @@ void TaskManager::retreat_to_charger()
       charging_assignment};
     ++_next_sequence_number;
     {
-      std::lock_guard<std::mutex> lock(_mutex);
+      std::lock_guard<std::recursive_mutex> lock(_mutex);
       _direct_queue.insert(assignment);
     }
 
@@ -1802,6 +1982,57 @@ void TaskManager::_register_executed_task(const std::string& id)
 }
 
 //==============================================================================
+void TaskManager::_register_completed_task(const std::string& id,
+  nlohmann::json task_state)
+{
+  // Currently the choice of storing 100 executed tasks is arbitrary.
+  // If the size is at max capacity
+  if (_completed_task_registry.size() >= 100)
+  {
+    // Remove the oldest element
+    const std::string& oldest_key = _completed_task_order.front();
+
+    RCLCPP_WARN(
+      _context->node()->get_logger(),
+      "Robot [%s] completed_task_registry is full. "
+      "Removing oldest task [%s] from the registry. ",
+      _context->name().c_str(),
+      oldest_key.c_str());
+
+    _completed_task_registry.erase(oldest_key);
+    _completed_task_order.pop_front();
+  }
+
+  // Insert the new element
+  _completed_task_registry[id] = task_state;
+  _completed_task_order.push_back(id);
+}
+
+//==============================================================================
+bool TaskManager::is_task_completed(const std::string& task_id)
+{
+  auto it = _completed_task_registry.find(task_id);
+  return it != _completed_task_registry.end();
+}
+
+//==============================================================================
+const nlohmann::json TaskManager::get_completed_task_state(
+  const std::string& task_id)
+{
+  auto it = _completed_task_registry.find(task_id);
+  if (it != _completed_task_registry.end())
+  {
+    // Return the value (nlohmann::json) associated with the key
+    return it->second;
+  }
+  else
+  {
+    // Return the value (nlohmann::json) associated with the key
+    return {};
+  }
+}
+
+//==============================================================================
 void TaskManager::_populate_task_summary(
   std::shared_ptr<LegacyTask> task,
   uint32_t task_summary_state,
@@ -1818,7 +2049,6 @@ void TaskManager::_populate_task_summary(
     msg.task_profile.description.task_type.type =
       rmf_task_msgs::msg::TaskType::TYPE_STATION;
   }
-
   else
   {
     msg.task_id = task->id();
@@ -1960,6 +2190,8 @@ rmf_task::State TaskManager::_publish_pending_task(
 {
   const auto info = pending.request()->description()->generate_info(
     std::move(expected_state), parameters);
+  PendingInfo cache;
+  cache.info = info;
 
   nlohmann::json pending_json;
   const auto& booking = *pending.request()->booking();
@@ -1973,13 +2205,18 @@ rmf_task::State TaskManager::_publish_pending_task(
 
   if (pending.finish_state().time())
   {
-    pending_json["unix_millis_finish_time"] =
+    PendingTimeInfo t;
+    t.unix_millis_finish_time =
       to_millis(pending.finish_state().time()->time_since_epoch()).count();
 
     const auto estimate =
       pending.finish_state().time().value() - pending.deployment_time();
-    pending_json["original_estimate_millis"] =
-      std::max(0l, to_millis(estimate).count());
+    t.original_estimate_millis = std::max(0l, to_millis(estimate).count());
+
+    pending_json["unix_millis_finish_time"] = t.unix_millis_finish_time;
+    pending_json["original_estimate_millis"] = t.original_estimate_millis;
+
+    cache.time = t;
   }
   copy_assignment(pending_json["assigned_to"], *_context);
   pending_json["status"] = "queued";
@@ -1992,6 +2229,7 @@ rmf_task::State TaskManager::_publish_pending_task(
 
   _validate_and_publish_websocket(task_state_update, validator);
 
+  _pending_task_info[pending.request()] = cache;
   return pending.finish_state();
 }
 
@@ -2023,6 +2261,20 @@ void TaskManager::_publish_canceled_pending_task(
   const auto& booking = *pending.request()->booking();
   copy_booking_data(pending_json["booking"], booking);
 
+  const auto info_it = _pending_task_info.find(pending.request());
+  if (info_it != _pending_task_info.end())
+  {
+    const auto& cache = info_it->second;
+    pending_json["category"] = cache.info.category;
+    pending_json["detail"] = cache.info.detail;
+    if (cache.time.has_value())
+    {
+      const auto& t = *cache.time;
+      pending_json["unix_millis_finish_time"] = t.unix_millis_finish_time;
+      pending_json["original_estimate_millis"] = t.original_estimate_millis;
+    }
+  }
+
   pending_json["unix_millis_start_time"] =
     to_millis(pending.deployment_time().time_since_epoch()).count();
 
@@ -2045,16 +2297,59 @@ void TaskManager::_publish_canceled_pending_task(
 }
 
 //==============================================================================
+auto TaskManager::_drain_dispatched_assignments() -> std::vector<Assignment>
+{
+  std::vector<Assignment> assignments;
+  std::lock_guard<std::recursive_mutex> lock(_mutex);
+  for (const auto& a : _queue)
+  {
+    if (a.request()->booking()->automatic())
+    {
+      continue;
+    }
+
+    assignments.push_back(a);
+  }
+  _queue.clear();
+
+  return assignments;
+}
+
+//==============================================================================
+auto TaskManager::_drain_direct_assignments() -> std::vector<Assignment>
+{
+  std::vector<Assignment> assignments;
+  std::lock_guard<std::recursive_mutex> lock(_mutex);
+  for (const auto& a : _direct_queue)
+  {
+    if (a.assignment.request()->booking()->automatic())
+    {
+      continue;
+    }
+
+    assignments.push_back(a.assignment);
+  }
+  _direct_queue.clear();
+
+  return assignments;
+}
+
+//==============================================================================
 bool TaskManager::_cancel_task_from_dispatch_queue(
   const std::string& task_id,
   const std::vector<std::string>& labels)
 {
+  std::lock_guard<std::recursive_mutex> lock(_mutex);
   for (auto it = _queue.begin(); it != _queue.end(); ++it)
   {
     if (it->request()->booking()->id() == task_id)
     {
       _publish_canceled_pending_task(*it, labels);
       _queue.erase(it);
+
+
+      // Count this as an executed task so we don't lose track of its existence
+      _register_executed_task(task_id);
       return true;
     }
   }
@@ -2076,6 +2371,34 @@ bool TaskManager::_cancel_task_from_direct_queue(
     }
   }
   return false;
+}
+
+//==============================================================================
+bool TaskManager::_is_task_in_direct_queue(const std::string& task_id)
+{
+  for (auto it = _direct_queue.begin(); it != _direct_queue.end(); ++it)
+  {
+    if (it->assignment.request()->booking()->id() == task_id)
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+//==============================================================================
+std::optional<TaskManager::DirectAssignment> TaskManager::
+get_assignment_from_direct_queue(
+  const std::string& task_id)
+{
+  for (auto it = _direct_queue.begin(); it != _direct_queue.end(); ++it)
+  {
+    if (it->assignment.request()->booking()->id() == task_id)
+    {
+      return *it; // Return the found element
+    }
+  }
+  return std::nullopt; // Return an empty optional if not found
 }
 
 //==============================================================================
@@ -2180,7 +2503,7 @@ void TaskManager::_send_simple_error_if_queued(
 {
   // TODO(YV): We could cache the task_ids of direct and dispatched tasks in
   // unordered_sets and perform a lookup to see which queue to iterate.
-  std::lock_guard<std::mutex> lock(_mutex);
+  std::lock_guard<std::recursive_mutex> lock(_mutex);
   for (const auto& a : _queue)
   {
     if (a.request()->booking()->id() == task_id)
@@ -2283,11 +2606,36 @@ std::function<void()> TaskManager::_task_finished(std::string id)
         std::this_thread::sleep_for(std::chrono::seconds(1));
       }
 
-      RCLCPP_INFO(
-        self->_context->node()->get_logger(),
-        "[%s] - TaskID: [%s] has been completed",
-        self->_context->requester_id().c_str(),
-        id.c_str());
+
+      if (self->_active_task.is_cancelled() &&
+        !self->_active_task.is_quiet_cancel())
+      {
+        RCLCPP_INFO(
+          self->_context->node()->get_logger(),
+          "[%s] - TaskID: [%s] has been completed but cancelled. "
+          "Don't insert in completed_task_registry. "
+          ,
+          self->_context->requester_id().c_str(),
+          id.c_str());
+      }
+      else
+      {
+        RCLCPP_INFO(
+          self->_context->node()->get_logger(),
+          "[%s] - TaskID: [%s] has been completed",
+          self->_context->requester_id().c_str(),
+          id.c_str());
+
+        //Save in completed task storage
+        RCLCPP_DEBUG(
+          self->_context->node()->get_logger(),
+          "Robot [%s] has completed task [%s]. "
+          "Insert to completed_task_registry. ",
+          self->_context->name().c_str(), id.c_str());
+
+        self->_register_completed_task(id,
+          self->_active_task.get_task_state());
+      }
 
       self->_active_task = ActiveTask();
       self->_context->current_task_id(std::nullopt);
@@ -2386,6 +2734,16 @@ void TaskManager::_handle_direct_request(
 }
 
 //==============================================================================
+namespace {
+nlohmann::json simple_success_json()
+{
+  nlohmann::json successful_result;
+  successful_result["success"] = true;
+  return successful_result;
+}
+} // anonymous namespace
+
+//==============================================================================
 void TaskManager::_handle_cancel_request(
   const nlohmann::json& request_json,
   const std::string& request_id)
@@ -2398,7 +2756,13 @@ void TaskManager::_handle_cancel_request(
 
   const auto& task_id = request_json["task_id"].get<std::string>();
   if (cancel_task(task_id, get_labels(request_json)))
+  {
     _send_simple_success_response(request_id);
+  }
+  else
+  {
+    //TODO
+  }
 }
 
 //==============================================================================
@@ -2414,7 +2778,13 @@ void TaskManager::_handle_kill_request(
 
   const auto& task_id = request_json["task_id"].get<std::string>();
   if (kill_task(task_id, get_labels(request_json)))
+  {
     _send_simple_success_response(request_id);
+  }
+  else
+  {
+    //TODO
+  }
 }
 
 //==============================================================================
