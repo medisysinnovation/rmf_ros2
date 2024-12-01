@@ -2,19 +2,36 @@
 Changelog for package rmf_websocket
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-2.2.5 (2023-12-22)
+2.8.0 (2024-06-12)
 ------------------
 
-2.2.4 (2023-12-15)
+2.7.1 (2024-06-11)
 ------------------
 
-2.2.3 (2023-09-20)
+2.7.0 (2024-06-01)
+------------------
+* Fix race condition for ingesting/dispensing and disable uncrustify tests by default (`#362 <https://github.com/open-rmf/rmf_ros2/pull/362>`_)
+* Fix deadlock in websocket server (`#342 <https://github.com/open-rmf/rmf_ros2/pull/342>`_)
+* Lower debug level of some messages in rmf_websocket (`#340 <https://github.com/open-rmf/rmf_ros2/pull/340>`_)
+* Refactors the socket broadcast client (`#329 <https://github.com/open-rmf/rmf_ros2/pull/329>`_)
+* Contributors: Arjo Chakravarty, Grey, Luca Della Vedova, Yadunund
+
+2.6.0 (2024-03-13)
 ------------------
 
-2.2.2 (2023-09-11)
+2.5.0 (2023-12-22)
 ------------------
 
-2.2.1 (2023-08-10)
+2.4.0 (2023-12-15)
+------------------
+
+2.3.2 (2023-08-28)
+------------------
+
+2.3.1 (2023-08-10)
+------------------
+
+2.3.0 (2023-06-08)
 ------------------
 
 2.2.0 (2023-06-06)
