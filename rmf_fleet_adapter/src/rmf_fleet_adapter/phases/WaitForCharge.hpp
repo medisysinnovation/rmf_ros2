@@ -28,9 +28,12 @@
 namespace rmf_fleet_adapter {
 namespace phases {
 
+constexpr double DEFAULT_CHARGE_TO_SOC = 0.98;
+
 //==============================================================================
 class WaitForCharge
 {
+
 public:
 
   using StatusMsg = LegacyTask::StatusMsg;

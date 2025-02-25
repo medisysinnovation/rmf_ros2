@@ -32,7 +32,7 @@ rmf_traffic::Duration WaitForCharge::Active::estimate_remaining_time() const
 {
   const double capacity = _battery_system.capacity();
   const double charging_current = _battery_system.charging_current();
-  const double charge_to_soc = _charge_to_soc.value_or(1.0);
+  const double charge_to_soc = _charge_to_soc.value_or(DEFAULT_CHARGE_TO_SOC);
   const double time_estimate =
     3600.0 * capacity * (charge_to_soc - _context->current_battery_soc()) /
     charging_current;
@@ -76,7 +76,8 @@ WaitForCharge::Active::Active(
       _battery_system.charging_current()));
 
   _description = "Charging [" + _context->requester_id() + "] to ["
-    + std::to_string(100.0 * _charge_to_soc.value_or(1.0)) + "]";
+    + std::to_string(100.0 * _charge_to_soc.value_or(DEFAULT_CHARGE_TO_SOC)) +
+    "]";
 
   RCLCPP_INFO(
     _context->node()->get_logger(),
@@ -111,7 +112,7 @@ std::shared_ptr<LegacyTask::ActivePhase> WaitForCharge::Pending::begin()
     "Robot [%s] has begun waiting for its battery to charge to %.1f%%. "
     "Please ensure that the robot is charging.",
     _context->name().c_str(),
-    _charge_to_soc.value_or(1.0) * 100.0);
+    _charge_to_soc.value_or(DEFAULT_CHARGE_TO_SOC) * 100.0);
 
   active->_battery_soc_subscription = _context->observe_battery_soc()
     .observe_on(rxcpp::identity_same_worker(_context->worker()))
@@ -148,7 +149,7 @@ std::shared_ptr<LegacyTask::ActivePhase> WaitForCharge::Pending::begin()
           "is %.1f %%/hour. If the battery percentage has not been rising, "
           "please check that the robot is connected to its charger.",
           active->_context->name().c_str(),
-          active->_charge_to_soc.value_or(1.0) * 100.0,
+          active->_charge_to_soc.value_or(DEFAULT_CHARGE_TO_SOC) * 100.0,
           battery_soc * 100,
           average_charging_rate,
           active->_expected_charging_rate);
@@ -184,7 +185,8 @@ WaitForCharge::Pending::Pending(
   _time_estimate(time_estimate)
 {
   _description =
-    "Charging robot to [" + std::to_string(100.0 * charge_to_soc.value_or(1.0))
+    "Charging robot to [" +
+    std::to_string(100.0 * charge_to_soc.value_or(DEFAULT_CHARGE_TO_SOC))
     + "%]";
 }
 
@@ -198,7 +200,8 @@ auto WaitForCharge::make(
   const double charging_current = battery_system.charging_current();
   const double time_estimate =
     3600.0 * capacity
-    * (charge_to_soc.value_or(1.0) - context->current_battery_soc()) /
+    * (charge_to_soc.value_or(DEFAULT_CHARGE_TO_SOC) -
+    context->current_battery_soc()) /
     charging_current;
 
   return std::unique_ptr<Pending>(
