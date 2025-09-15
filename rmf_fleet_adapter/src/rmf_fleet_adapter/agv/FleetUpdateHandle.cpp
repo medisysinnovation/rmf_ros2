@@ -1079,6 +1079,23 @@ void FleetUpdateHandle::Implementation::update_fleet_state() const
         issue_msg["detail"] = issue->detail;
         issues_msg.push_back(std::move(issue_msg));
       }
+
+      nlohmann::json mutex_groups_json;
+      std::vector<std::string> locked_mutex_groups;
+      for (const auto& g : context->locked_mutex_groups())
+      {
+        locked_mutex_groups.push_back(g.first);
+      }
+      mutex_groups_json["locked"] = std::move(locked_mutex_groups);
+
+      std::vector<std::string> requesting_mutex_groups;
+      for (const auto& g : context->requesting_mutex_groups())
+      {
+        requesting_mutex_groups.push_back(g.first);
+      }
+      mutex_groups_json["requesting"] = std::move(requesting_mutex_groups);
+
+      json["mutex_groups"] = std::move(mutex_groups_json);
     }
 
     try
