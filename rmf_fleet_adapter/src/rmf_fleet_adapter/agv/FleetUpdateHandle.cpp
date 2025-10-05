@@ -214,6 +214,10 @@ std::shared_ptr<rmf_task::Request> FleetUpdateHandle::Implementation::convert(
   if (!deserialized_task.description)
   {
     errors = deserialized_task.errors;
+    for (auto& e : errors)
+    {
+      e = make_error_str(6, "Unable to deserialize", e);
+    }
     return nullptr;
   }
 
@@ -1524,6 +1528,9 @@ void FleetUpdateHandle::add_robot(
   rmf_traffic::agv::Plan::StartSet start,
   std::function<void(std::shared_ptr<RobotUpdateHandle>)> handle_cb)
 {
+
+  auto logger = _pimpl->node->get_logger();
+
   if (start.empty())
   {
     // *INDENT-OFF*
@@ -1546,23 +1553,60 @@ void FleetUpdateHandle::add_robot(
     command = std::move(command),
     start = std::move(start),
     handle_cb = std::move(handle_cb),
-    fleet_wptr = weak_from_this()](
+    fleet_wptr = weak_from_this(),
+    name = std::move(name),
+    logger = std::move(logger)
+    ](
       rmf_traffic::schedule::Participant participant)
     {
       auto fleet = fleet_wptr.lock();
       if (!fleet)
         return;
 
-      const auto charger_wp = fleet->_pimpl->get_nearest_charger(start[0]);
+      RCLCPP_INFO(logger,
+      "[FleetUpdateHandle::add_robot %s] - Getting nearest charger",
+      name.c_str());
+
+      // CW prevent fleet adapter crash when one robot unable to find charger waypoint
+      // get_nearest_charger This takes quite sometime
+      auto charger_wp = fleet->_pimpl->get_nearest_charger(start[0]);
 
       if (!charger_wp.has_value())
       {
+        RCLCPP_ERROR(logger,
+        "[FleetUpdateHandle::add_robot %s] - No charger waypoint found from get_nearest_charger, "
+        "choosing from existing charging_waypoints. This param will be overwritten later in RobotCommandHandle.",
+        name.c_str());
+
         // *INDENT-OFF*
-        throw std::runtime_error(
-          "[FleetUpdateHandle::add_robot] Unable to find nearest charging "
-          "waypoint. Adding a robot to a fleet requires at least one charging"
-          "waypoint to be present in its navigation graph.");
+        // throw std::runtime_error(
+        //   "[FleetUpdateHandle::add_robot] Unable to find nearest charging "
+        //   "waypoint. Adding a robot to a fleet requires at least one charging"
+        //   "waypoint to be present in its navigation graph.");
         // *INDENT-ON*
+
+        if (!fleet->_pimpl->charging_waypoints.empty()) {
+          // assign one element directly
+          charger_wp = *fleet->_pimpl->charging_waypoints.begin();
+
+          RCLCPP_INFO(
+            logger,
+            "[FleetUpdateHandle::add_robot %s] - Setting charger waypoint to %zu",
+            name.c_str(),
+            charger_wp);
+        }
+        else {
+          RCLCPP_ERROR(
+            logger,
+            "[FleetUpdateHandle::add_robot %s] - No charging waypoints available",
+            name.c_str());
+
+          throw std::runtime_error(
+            "[FleetUpdateHandle::add_robot] Unable to find any charging "
+            "waypoint. Adding a robot to a fleet requires at least one charging"
+            "waypoint to be present in its navigation graph.");
+        }
+        // End CW
       }
 
       rmf_task::State state;
