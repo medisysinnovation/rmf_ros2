@@ -241,7 +241,6 @@ TaskManagerPtr TaskManager::make(
     rmf_api_msgs::schemas::rewind_task_response,
     rmf_api_msgs::schemas::robot_task_request,
     rmf_api_msgs::schemas::dispatch_task_response,
-    rmf_api_msgs::schemas::task_state,
     rmf_api_msgs::schemas::error,
     rmf_api_msgs::schemas::robot_task_response,
     rmf_api_msgs::schemas::skip_phase_request,
@@ -1207,7 +1206,11 @@ nlohmann::json TaskManager::submit_direct_request(
       }
       catch (const std::exception&)
       {
-        json_errors.push_back(e);
+        nlohmann::json error;
+        error["code"] = 42;
+        error["category"] = "unknown";
+        error["detail"] = e;
+        json_errors.push_back(error);
       }
     }
     response_json["errors"] = std::move(json_errors);
@@ -1586,9 +1589,13 @@ void TaskManager::_begin_next_task()
       _context->now());
 
     if (is_next_task_direct)
+    {
       _direct_queue.erase(_direct_queue.begin());
+    }
     else
+    {
       _queue.erase(_queue.begin());
+    }
 
     if (!_active_task)
     {
@@ -1620,7 +1627,7 @@ void TaskManager::_begin_next_task()
       RCLCPP_INFO(
         _context->node()->get_logger(),
         "Beginning new task [%s] for [%s] from direct queue. "
-        "Remaining queue size: %ld",
+        "Remaining queue size: [%ld]",
         _active_task.id().c_str(),
         _context->requester_id().c_str(),
         _direct_queue.size());
@@ -1630,7 +1637,7 @@ void TaskManager::_begin_next_task()
       RCLCPP_INFO(
         _context->node()->get_logger(),
         "Beginning new task [%s] for [%s] from dispatch queue. "
-        "Remaining queue size: %ld",
+        "Remaining queue size: [%ld]",
         _active_task.id().c_str(),
         _context->requester_id().c_str(),
         _queue.size());
@@ -1641,14 +1648,18 @@ void TaskManager::_begin_next_task()
   else
   {
     if (!_waiting && !_finished_waiting)
+    {
       _begin_waiting();
+    }
   }
 
   _context->worker().schedule(
     [w = weak_from_this()](const auto&)
     {
       if (const auto self = w.lock())
+      {
         self->_process_robot_interrupts();
+      }
     });
 }
 
@@ -1824,9 +1835,13 @@ void TaskManager::_resume_from_emergency()
         return;
 
       if (self->_emergency_active)
+      {
         return;
+      }
 
+      // resetting state to empty task
       self->_emergency_pullover = ActiveTask();
+      self->_context->current_task_id(std::nullopt);
 
       if (!self->_emergency_pullover_interrupt_token.has_value())
       {
@@ -1840,7 +1855,16 @@ void TaskManager::_resume_from_emergency()
           {*self->_emergency_pullover_interrupt_token},
           {"emergency finished"},
           self->_context->now());
+
         self->_emergency_pullover_interrupt_token = std::nullopt;
+
+        RCLCPP_INFO(
+          self->_context->node()->get_logger(),
+          "Resume execution of task [%s] for [%s] after emergency pullover",
+          self->_active_task.id().c_str(),
+          self->_context->requester_id().c_str());
+
+        self->_context->current_task_id(self->_active_task.id());
       }
       else
       {
@@ -1876,26 +1900,36 @@ std::function<void()> TaskManager::_make_resume_from_waiting()
 void TaskManager::retreat_to_charger()
 {
   if (!_travel_estimator)
+  {
     return;
+  }
 
   {
     std::lock_guard<std::recursive_mutex> guard(_mutex);
     if (_active_task || !_queue.empty())
+    {
       return;
+    }
   }
 
   const auto task_planner = _context->task_planner();
   if (!task_planner)
+  {
     return;
+  }
 
   if (!task_planner->configuration().constraints().drain_battery())
+  {
     return;
+  }
 
   const auto current_state = expected_finish_state();
   const auto charging_waypoint =
     current_state.dedicated_charging_waypoint().value();
   if (current_state.waypoint() == charging_waypoint)
+  {
     return;
+  }
 
   const auto& constraints = task_planner->configuration().constraints();
   const double threshold_soc = constraints.threshold_soc();
@@ -2188,7 +2222,9 @@ void TaskManager::_consider_publishing_updates()
 void TaskManager::_publish_task_state()
 {
   if (!_active_task)
+  {
     return;
+  }
 
   _active_task.publish_task_state(*this);
 }
