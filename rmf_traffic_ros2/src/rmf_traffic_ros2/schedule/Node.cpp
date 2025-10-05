@@ -1304,7 +1304,7 @@ void ScheduleNode::update_mirrors()
         const std::string starting_from = request.has_value() ?
           "version " + std::to_string(*request) : "the beginning";
 
-        RCLCPP_INFO(
+        RCLCPP_DEBUG(
           get_logger(),
           "[ScheduleNode::update_mirrors] Sending remedial update starting "
           "from %s going to %lu for query %ld",
