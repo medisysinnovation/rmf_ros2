@@ -478,8 +478,8 @@ rmf_traffic::agv::Graph parse_graph(
         const auto s_it = stacked_vertex.find(wp);
         if (s_it != stacked_vertex.end())
         {
-          std::cout << "Also shifting stacked vertex " << s_it->first << ":" <<
-            s_it->second << std::endl;
+          // std::cout << "Also shifting stacked vertex " << s_it->first << ":" <<
+          //   s_it->second << std::endl;
           graph.get_waypoint(s_it->second).set_location(lift_center);
         }
       }

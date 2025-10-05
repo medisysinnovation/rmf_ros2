@@ -175,6 +175,7 @@ void MoveRobot::Action::operator()(const Subscriber& s)
           self->_context->request_replan();
         });
 
+      //next_arrival_estimator
       const auto update = [
         s,
         w_action = self->weak_from_this(),
@@ -366,8 +367,13 @@ void MoveRobot::Action::operator()(const Subscriber& s)
         }
       };
 
+      //def follow_new_path
       self->_context->command()->follow_new_path(
+
+        //waypoints
         self->_waypoints,
+
+        //next_arrival_estimator
         [worker = self->_context->worker(), update](
           std::size_t path_index, rmf_traffic::Duration estimate)
         {
@@ -376,6 +382,8 @@ void MoveRobot::Action::operator()(const Subscriber& s)
             update(path_index, estimate);
           });
         },
+
+        //path_finished_callback
         [worker = self->_context->worker(), finish]()
         {
           worker.schedule([finish](const auto&)

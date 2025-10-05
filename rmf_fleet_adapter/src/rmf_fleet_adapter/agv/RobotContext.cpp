@@ -1467,6 +1467,14 @@ void RobotContext::_check_door_supervisor(
       {
         if (!_holding_door.has_value() || *_holding_door != door.door_name)
         {
+
+          RCLCPP_INFO(
+            _node->get_logger(),
+            "Requesting door [%s] to be released for [%s] "
+            "because the robot has been idle for an excessive amount of time.",
+            door.door_name.c_str(),
+            requester_id().c_str());
+
           // We should not be holding this door open
           _node->door_request()->publish(
             rmf_door_msgs::build<rmf_door_msgs::msg::DoorRequest>()
@@ -1549,6 +1557,7 @@ void RobotContext::_check_mutex_groups(
   }
 }
 
+//==============================================================================
 void RobotContext::_retain_mutex_groups(
   const std::unordered_set<std::string>& retain,
   std::unordered_map<std::string, TimeMsg>& groups)
@@ -1670,6 +1679,13 @@ void RobotContext::_handle_mutex_group_manual_release(
   {
     retain.erase(g);
   }
+
+  // CW if the list is empty, release all locked mutex groups
+  if (msg.release_mutex_groups.empty())
+  {
+    retain.clear();
+  }
+  // End CW
 
   retain_mutex_groups(retain);
 }

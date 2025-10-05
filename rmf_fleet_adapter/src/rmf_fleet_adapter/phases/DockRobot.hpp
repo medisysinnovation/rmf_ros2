@@ -124,8 +124,13 @@ void DockRobot::Action::operator()(const Subscriber& s)
       + active->_dock_name + "]";
 
       s.on_next(status);
+
+      //def dock
       active->_context->command()->dock(
+        //dock_name
         active->_dock_name,
+
+        //docking_finished_callback
         [s, dock_name = active->_dock_name, context = active->_context,
         wp = active->_waypoint, plan_id = active->_plan_id]()
         {

@@ -468,6 +468,16 @@ std::optional<rmf_traffic::agv::Plan::Goal> GoToPlace::Active::_choose_goal(
         "No path found for robot [%s] to waypoint [%lu]",
         _context->requester_id().c_str(),
         wp_idx);
+      
+      const auto& graph = _context->navigation_graph();
+      std::stringstream ss;
+      ss << "Current start set locations: "
+        << agv::print_starts(_context->location(), graph);
+
+      RCLCPP_INFO(
+        _context->node()->get_logger(),
+        "%s",
+        ss.str().c_str());
     }
   }
 
