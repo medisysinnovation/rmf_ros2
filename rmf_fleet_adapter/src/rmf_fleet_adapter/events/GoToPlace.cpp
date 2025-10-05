@@ -468,11 +468,11 @@ std::optional<rmf_traffic::agv::Plan::Goal> GoToPlace::Active::_choose_goal(
         "No path found for robot [%s] to waypoint [%lu]",
         _context->requester_id().c_str(),
         wp_idx);
-      
+
       const auto& graph = _context->navigation_graph();
       std::stringstream ss;
       ss << "Current start set locations: "
-        << agv::print_starts(_context->location(), graph);
+         << agv::print_starts(_context->location(), graph);
 
       RCLCPP_INFO(
         _context->node()->get_logger(),
@@ -581,6 +581,30 @@ void GoToPlace::Active::_find_plan()
       self->_state->update_log().info(
         "Found a plan to move from ["
         + start_name + "] to [" + goal_name + "]");
+
+      RCLCPP_INFO(
+        self->_context->node()->get_logger(),
+        "[%s]: Found a plan to move from [%s] to [%s]",
+        self->_context->requester_id().c_str(),
+        start_name.c_str(),
+        goal_name.c_str());
+
+      //Print plan waypoints
+      // const auto& graph = self->_context->navigation_graph();
+      // std::stringstream ss;
+      // auto waypoints = result->get_waypoints();
+      // const auto t0 = waypoints.front().time();
+      // for (const auto& wp : waypoints)
+      // {
+      //   ss << "\n -- " << agv::print_plan_waypoint(wp, graph, t0);
+      // }
+
+      // RCLCPP_INFO(
+      //   self->_context->node()->get_logger(),
+      //   "[%s]: "
+      //   "Plan:%s",
+      //   self->_context->requester_id().c_str(),
+      //   ss.str().c_str());
 
       auto full_itinerary = project_itinerary(
         *result, self->_description.expected_next_destinations(),
