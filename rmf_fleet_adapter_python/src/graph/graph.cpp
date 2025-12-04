@@ -71,7 +71,11 @@ void bind_graph(py::module& m)
   .def("set_charger", &Graph::Waypoint::set_charger)
   .def_property_readonly("index", &Graph::Waypoint::index)
   .def_property_readonly("waypoint_name", &Graph::Waypoint::name)
-  .def_property_readonly("in_lift", &Graph::Waypoint::in_lift);
+  .def_property_readonly("in_lift", &Graph::Waypoint::in_lift)
+  .def_property("merge_radius",
+    &Graph::Waypoint::merge_radius,
+    &Graph::Waypoint::set_merge_radius)
+  ;
 
   // ORIENTATION_CONSTRAINT ====================================================
   py::class_<OrientationConstraint,
